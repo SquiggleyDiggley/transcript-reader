@@ -35,8 +35,8 @@ export default function HomePage() {
         return;
       }
 
-      const modelLabel = result.models?.[0]
-        ? `Connected (${result.models[0]})`
+      const modelLabel = result.models?.length
+        ? 'Connected (TransferPath AI)'
         : 'Connected';
 
       setOllamaStatus({
@@ -243,10 +243,12 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div style={styles.noteBox}>
-            <strong>Demo story:</strong> Extract rows, flag uncertain matches, confirm a course,
-            and watch eligibility update live.
-          </div>
+          {demoMode ? (
+            <div style={styles.noteBox}>
+              <strong>Demo story:</strong> Extract rows, flag uncertain matches, confirm a course,
+              and watch eligibility update live.
+            </div>
+          ) : null}
 
           {error ? <p style={styles.error}>{error}</p> : null}
           {reviewMessage ? <p style={styles.success}>{reviewMessage}</p> : null}
@@ -323,15 +325,7 @@ export default function HomePage() {
             </Panel>
           </section>
         </>
-      ) : (
-        <section style={styles.emptyState}>
-          <h2 style={{ marginTop: 0 }}>Ready for your presentation</h2>
-          <p>
-            Use <strong>Load Demo Mode</strong> for an instant walkthrough, or upload your own
-            transcript file to test the real flow.
-          </p>
-        </section>
-      )}
+      ) : null}
     </main>
   );
 }
