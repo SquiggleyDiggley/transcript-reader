@@ -9,6 +9,15 @@ import { demoTranscriptData } from '@/lib/demoData';
 export default function HomePage() {
   const [file, setFile] = useState(null);
   const [data, setData] = useState(null);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: 'assistant',
+      text: 'I am TransferPath AI. Upload a transcript or load demo mode, then ask me questions.',
+    },
+  ]);
   const [ollamaStatus, setOllamaStatus] = useState({
     loading: true,
     connected: false,
@@ -94,6 +103,13 @@ export default function HomePage() {
       }
 
       setData(result);
+      setChatError('');
+      setChatMessages([
+        {
+          role: 'assistant',
+          text: 'Transcript processed. Ask me about eligibility, missing prerequisites, or course equivalencies.',
+        },
+      ]);
     } catch (err) {
       setError(err.message || 'Something went wrong');
     } finally {
@@ -106,6 +122,69 @@ export default function HomePage() {
     setReviewMessage('');
     setDemoMode(true);
     setData(demoTranscriptData);
+    setChatError('');
+    setChatMessages([
+      {
+        role: 'assistant',
+        text: 'Demo transcript loaded. Ask me anything about this student\'s transfer path.',
+      },
+    ]);
+  }
+
+  function buildTranscriptContext(payload) {
+    if (!payload) return null;
+
+    return {
+      studentName: payload.studentName || '',
+      institution: payload.institution || '',
+      completed: payload.completed || [],
+      eligibleNext: payload.eligibleNext || [],
+      blocked: payload.blocked || [],
+      extractedCourses: (payload.extractedCourses || []).slice(0, 50),
+      extractionSource: payload.extractionSource || 'unknown',
+    };
+  }
+
+  async function handleAskQuestion() {
+    const question = chatInput.trim();
+
+    if (!question || !data || chatLoading) return;
+
+    const nextMessages = [...chatMessages, { role: 'user', text: question }];
+    setChatMessages(nextMessages);
+    setChatInput('');
+    setChatError('');
+    setChatLoading(true);
+
+    try {
+      const response = await fetch('/api/chat-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          transcript: buildTranscriptContext(data),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to get answer');
+      }
+
+      setChatMessages((current) => [...current, { role: 'assistant', text: result.answer }]);
+    } catch (err) {
+      setChatError(err.message || 'Unable to answer question right now');
+      setChatMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          text: 'I could not answer that right now. Please try again.',
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
   }
 
   async function handleSaveReview(payload) {
@@ -324,6 +403,45 @@ export default function HomePage() {
               </ul>
             </Panel>
           </section>
+
+          <section style={styles.chatSection}>
+            <h3 style={styles.chatTitle}>Ask TransferPath AI</h3>
+            <div style={styles.chatMessages}>
+              {chatMessages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  style={message.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant}
+                >
+                  {message.text}
+                </div>
+              ))}
+            </div>
+
+            <div style={styles.chatInputRow}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleAskQuestion();
+                  }
+                }}
+                placeholder="Ask about requirements, eligibility, or transfer credit..."
+                style={styles.chatInput}
+              />
+              <button
+                onClick={handleAskQuestion}
+                disabled={!chatInput.trim() || chatLoading}
+                style={styles.chatSendButton}
+              >
+                {chatLoading ? 'Thinking...' : 'Ask'}
+              </button>
+            </div>
+
+            {chatError ? <p style={styles.error}>{chatError}</p> : null}
+          </section>
         </>
       ) : null}
     </main>
@@ -530,6 +648,66 @@ const styles = {
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
     gap: '1rem',
     marginTop: '1.5rem',
+  },
+  chatSection: {
+    marginTop: '1.5rem',
+    background: '#ffffff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '16px',
+    padding: '1rem',
+  },
+  chatTitle: {
+    marginTop: 0,
+    marginBottom: '0.75rem',
+  },
+  chatMessages: {
+    maxHeight: '320px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.6rem',
+    padding: '0.25rem 0',
+  },
+  chatBubbleAssistant: {
+    alignSelf: 'flex-start',
+    background: '#eff6ff',
+    color: '#1e3a8a',
+    border: '1px solid #bfdbfe',
+    borderRadius: '12px',
+    padding: '0.65rem 0.8rem',
+    maxWidth: '85%',
+    whiteSpace: 'pre-wrap',
+  },
+  chatBubbleUser: {
+    alignSelf: 'flex-end',
+    background: '#dbeafe',
+    color: '#0f172a',
+    border: '1px solid #93c5fd',
+    borderRadius: '12px',
+    padding: '0.65rem 0.8rem',
+    maxWidth: '85%',
+    whiteSpace: 'pre-wrap',
+  },
+  chatInputRow: {
+    marginTop: '0.8rem',
+    display: 'flex',
+    gap: '0.6rem',
+  },
+  chatInput: {
+    flex: 1,
+    border: '1px solid #cbd5e1',
+    borderRadius: '10px',
+    padding: '0.65rem 0.75rem',
+    fontSize: '0.95rem',
+  },
+  chatSendButton: {
+    background: '#1d4ed8',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '0.65rem 1rem',
+    fontWeight: 700,
+    cursor: 'pointer',
   },
   panel: {
     background: '#ffffff',

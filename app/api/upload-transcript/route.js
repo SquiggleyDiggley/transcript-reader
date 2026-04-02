@@ -2,9 +2,10 @@ import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 import { matchCourseEquivalent } from '@/lib/matcher';
 import { getCompletedCourses, computeEligibility } from '@/lib/eligibility';
+import { parseCoursesFromText } from '@/lib/parser';
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:latest';
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || 'ollama';
 
 const client = new OpenAI({
@@ -76,45 +77,65 @@ export async function POST(request) {
       );
     }
 
-    const response = await client.responses.create({
-      model: OLLAMA_MODEL,
-      input: [
-        {
-          role: 'system',
-          content: [
-            {
-              type: 'input_text',
-              text: [
-                'You extract transcript data for a university transfer-credit workflow.',
-                'Return only structured data matching the schema.',
-                'Extract each course row with raw course title, grade, credits, and term when available.',
-                'Do not invent courses or values not present in the transcript.',
-              ].join(' '),
-            },
-          ],
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: fileText,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'transcript_extraction',
-          schema: transcriptSchema,
-        },
-      },
-      store: false,
-    });
+    let parsed = null;
+    let extractedCourses = [];
+    let extractionSource = 'ai';
+    let warning = '';
 
-    const parsed = JSON.parse(response.output_text);
-    const extractedCourses = decorateCourses(parsed.courses || []);
+    try {
+      const response = await client.responses.create({
+        model: OLLAMA_MODEL,
+        input: [
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text: [
+                  'You extract transcript data for a university transfer-credit workflow.',
+                  'Return only structured data matching the schema.',
+                  'Extract each course row with raw course title, grade, credits, and term when available.',
+                  'Do not invent courses or values not present in the transcript.',
+                ].join(' '),
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: fileText,
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'transcript_extraction',
+            schema: transcriptSchema,
+          },
+        },
+        store: false,
+      });
+
+      parsed = JSON.parse(response.output_text);
+      extractedCourses = decorateCourses(parsed.courses || []);
+
+      if (!extractedCourses.length) {
+        throw new Error('AI returned no courses');
+      }
+    } catch (aiError) {
+      extractionSource = 'parser-fallback';
+      warning = `AI extraction unavailable, used parser fallback. ${aiError?.message || ''}`.trim();
+      extractedCourses = parseCoursesFromText(fileText);
+      parsed = {
+        studentName: '',
+        institution: '',
+      };
+    }
+
     const completed = getCompletedCourses(extractedCourses);
     const eligibility = computeEligibility(completed);
 
@@ -126,6 +147,8 @@ export async function POST(request) {
       eligibleNext: eligibility.eligibleNext,
       blocked: eligibility.blocked,
       remaining: eligibility.remaining,
+      extractionSource,
+      warning,
     });
   } catch (error) {
     console.error('upload-transcript error:', error);
