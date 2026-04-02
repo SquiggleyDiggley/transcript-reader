@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server';
 import { matchCourseEquivalent } from '@/lib/matcher';
 import { getCompletedCourses, computeEligibility } from '@/lib/eligibility';
 
-const client = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || 'ollama';
+
+const client = new OpenAI({
+  baseURL: OLLAMA_BASE_URL,
+  apiKey: OLLAMA_API_KEY,
+});
 
 const transcriptSchema = {
   type: 'object',
@@ -58,17 +63,10 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    if (!client) {
-      return NextResponse.json(
-        { error: 'OPENAI_API_KEY is not configured' },
-        { status: 500 },
-      );
-    }
-
     // MVP approach:
     // - For now, read file text directly.
     // - This works well for .txt and many text-based PDFs only if you already convert them upstream.
-    // - Later, you can switch to OpenAI file input or a PDF text extraction step.
+    // - This route is configured for Ollama's OpenAI-compatible endpoint.
     const fileText = await file.text();
 
     if (!fileText || !fileText.trim()) {
@@ -79,7 +77,7 @@ export async function POST(request) {
     }
 
     const response = await client.responses.create({
-      model: 'gpt-5.4-mini',
+      model: OLLAMA_MODEL,
       input: [
         {
           role: 'system',
@@ -132,10 +130,16 @@ export async function POST(request) {
   } catch (error) {
     console.error('upload-transcript error:', error);
 
+    const details = error?.message || 'Unknown error';
+    const isOllamaConnectionIssue =
+      /ECONNREFUSED|fetch failed|connect|ENOTFOUND/i.test(details);
+
     return NextResponse.json(
       {
         error: 'Failed to process transcript',
-        details: error?.message || 'Unknown error',
+        details: isOllamaConnectionIssue
+          ? 'Could not connect to Ollama. Ensure Ollama is running and OLLAMA_BASE_URL is correct.'
+          : details,
       },
       { status: 500 }
     );

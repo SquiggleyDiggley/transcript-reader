@@ -40,18 +40,22 @@ Then open `http://localhost:3000`.
 npm test
 ```
 
-## Optional AI extraction mode
+## Ollama configuration (required for AI extraction)
 
-You can enable OpenAI-powered transcript row extraction before the deterministic parser step.
+This project is configured to use **Ollama only** via its OpenAI-compatible API.
 
 Create a `.env.local` file with:
 
 ```text
-OPENAI_API_KEY=your_key_here
-USE_AI_EXTRACTION=true
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_MODEL=llama3.1:8b
+OLLAMA_API_KEY=ollama
 ```
 
-When disabled (or if AI extraction fails), the app automatically falls back to the normal parser flow.
+Notes:
+
+- Keep Ollama running locally before using transcript upload.
+- `OLLAMA_API_KEY` can be any non-empty value for local Ollama setups.
 
 ## Input format (current MVP)
 
