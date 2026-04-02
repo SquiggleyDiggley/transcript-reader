@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ReviewTable from '@/components/ReviewTable';
 import { catalog } from '@/data/catalog';
 import { courseDetails } from '@/data/courseDetails';
@@ -9,6 +9,49 @@ import { demoTranscriptData } from '@/lib/demoData';
 export default function HomePage() {
   const [file, setFile] = useState(null);
   const [data, setData] = useState(null);
+  const [ollamaStatus, setOllamaStatus] = useState({
+    loading: true,
+    connected: false,
+    message: 'Checking Ollama connection...',
+  });
+
+  useEffect(() => {
+    checkOllamaHealth();
+  }, []);
+
+  async function checkOllamaHealth() {
+    setOllamaStatus((current) => ({ ...current, loading: true }));
+
+    try {
+      const response = await fetch('/api/health/ollama', { cache: 'no-store' });
+      const result = await response.json();
+
+      if (!result.connected) {
+        setOllamaStatus({
+          loading: false,
+          connected: false,
+          message: result.message || 'Ollama is not reachable',
+        });
+        return;
+      }
+
+      const modelLabel = result.models?.[0]
+        ? `Connected (${result.models[0]})`
+        : 'Connected';
+
+      setOllamaStatus({
+        loading: false,
+        connected: true,
+        message: modelLabel,
+      });
+    } catch (err) {
+      setOllamaStatus({
+        loading: false,
+        connected: false,
+        message: err.message || 'Failed to check Ollama status',
+      });
+    }
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [reviewMessage, setReviewMessage] = useState('');
@@ -167,6 +210,19 @@ export default function HomePage() {
             Upload a transfer transcript, review extracted courses, confirm equivalencies, and see
             what the student can register for next.
           </p>
+
+          <div style={styles.statusRow}>
+            <span
+              style={
+                ollamaStatus.connected ? styles.statusBadgeConnected : styles.statusBadgeDisconnected
+              }
+            >
+              {ollamaStatus.loading ? 'Checking Ollama…' : ollamaStatus.message}
+            </span>
+            <button onClick={checkOllamaHealth} style={styles.statusButton}>
+              Refresh Status
+            </button>
+          </div>
 
           <div style={styles.buttonRow}>
             <input
@@ -360,6 +416,39 @@ const styles = {
     fontSize: '1rem',
     maxWidth: '720px',
     lineHeight: 1.6,
+  },
+  statusRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    flexWrap: 'wrap',
+  },
+  statusBadgeConnected: {
+    background: '#dcfce7',
+    color: '#166534',
+    border: '1px solid #86efac',
+    borderRadius: '999px',
+    padding: '0.35rem 0.75rem',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+  },
+  statusBadgeDisconnected: {
+    background: '#fef2f2',
+    color: '#991b1b',
+    border: '1px solid #fca5a5',
+    borderRadius: '999px',
+    padding: '0.35rem 0.75rem',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+  },
+  statusButton: {
+    border: '1px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#0f172a',
+    borderRadius: '8px',
+    padding: '0.4rem 0.65rem',
+    cursor: 'pointer',
+    fontWeight: 600,
   },
   buttonRow: {
     display: 'flex',
